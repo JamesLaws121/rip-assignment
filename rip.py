@@ -16,6 +16,8 @@ class RipDaemon:
         self.writeable = []
         self.exceptional = []
 
+        self.inputs
+
         while daemon_alive is True:
             # Main loop
             self.readable, self.writeable, self.exceptional = select.select([],[],[])
@@ -35,6 +37,13 @@ class RipDaemon:
     def read_config(self):
         """ Reads the configuration file """
         print("Read config")
+
+
+    def validate_config():
+        """ Checks  all values in config for correctness"""
+        print("check")
+
+
 
     def create_sockets(self):
         """ Creates the UDP sockets """
