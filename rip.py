@@ -1,5 +1,4 @@
 # import socket
-import time
 
 
 class RipDaemon:
@@ -16,7 +15,9 @@ class RipDaemon:
         self.writeable = []
         self.exceptional = []
 
-        self.inputs
+        self.inputs = []
+        self.outputs = []
+        
 
         while daemon_alive is True:
             # Main loop
@@ -38,12 +39,14 @@ class RipDaemon:
         """ Reads the configuration file """
         print("Read config")
 
+        config_file = open()
+
+
 
     def validate_config(router_ids, inputs_port, output_ports, timers):
         """ Checks  all values in config for correctness"""
-        print("correct")
 
-        print("check")
+
 
     def create_sockets(self):
         """ Creates the UDP sockets """
