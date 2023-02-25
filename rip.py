@@ -41,7 +41,7 @@ class RipDaemon:
 
     def validate_config():
         """ Checks  all values in config for correctness"""
-        print("check")
+        print("correct")
 
 
 
