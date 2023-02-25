@@ -1,49 +1,75 @@
 # import socket
+import sys, getopt
+import select
+import argparse
 
+
+"""
+To run code use:
+
+python rip.py config
+            ^^filename^^
+
+I made it add the .txt might change this later
+"""
 
 class RipDaemon:
-    def __init__(self):
+    def __init__(self, config_name):
         """ Class to create and manage a RIP daemon """
         print("Daemon created")
         daemon_alive = True
 
-        self.read_config()
+        self.read_config(config_name)
+
+            # Uncomment this to test your code
+        #self.validate_config()
 
         self.create_sockets()
 
+        # Ports to wait on input
         self.readable = []
+        # Output ports
         self.writeable = []
+        # Need to look into this
         self.exceptional = []
 
-        self.inputs = []
-        self.outputs = []
-        
+        return
 
         while daemon_alive is True:
             # Main loop
-            self.readable, self.writeable, self.exceptional = select.select([],[],[])
+            readable, writeable, exceptional = select.select(self.input_ports, [], [])
 
-            if len(self.readable) != 0:
+            if len(readable) != 0:
                 print("Read from sockets")
 
-            if len(self.writeable) != 0:
+            if len(writeable) != 0:
                 # Probably wont want this one
                 print("Write to sockets")
 
-            if len(self.exceptional) != 0:
+            if len(exceptional) != 0:
                 print("check exceptional")
 
             print("ALIVE")
 
-    def read_config(self):
+    def read_config(self, config_name):
         """ Reads the configuration file """
         print("Read config")
 
-        config_file = open()
+        config_file = open(config_name)
 
+        config = config_file.readlines()
+        config_dict = {}
+        for line in config:
+            variable, value = line.split(":")
 
+            # Cleans up any newlines and whitespace
+            config_dict[variable] = [value.strip() for value in value.split(",")]
 
-    def validate_config(router_ids, inputs_port, output_ports, timers):
+        self.router_id = config_dict["router_id"][0]
+        self.input_ports = config_dict["input_ports"]
+        self.outputs = config_dict["outputs"]
+
+    def validate_config(self):
         """ Checks  all values in config for correctness"""
 
         """Error codes:
@@ -53,24 +79,39 @@ class RipDaemon:
                     4: Output port number is the same as Input port number
                     5: An output port number has not in range
                     6: """
-        if router_ids > 1 and router_ids < 64000:
+
+        """ You need to do type checking/coverting (: """
+
+        """ For future maybe try to reduce magic numbers eg max_port instead of 64000"""
+
+        if self.router_id > 1 and self.router_id < 64000:
             return 1
-        if len(set(inputs_port)) != len(inputs_port):
+        if len(set(self.input_ports)) != len(self.input_ports):
             return 2
-        for i_port in inputs_port:
+        for i_port in self.input_ports:
             if i_port < 1024 or i_port > 64000:
                 return 3
-        for o_port in output_ports:
+        for o_port in self.outputs:
             output = o_port.split("-")
-            if int(output[0]) in inputs_port:
+            if int(self.outputs[0]) in inputs_port:
                 return 4
-            if int(output[0]) < 1024 or i_port > 64000:
+            if int(self.outputs[0]) < 1024 or i_port > 64000:
                 return 5
             #check if output[1,2] are ints
         return 0
+
     def create_sockets(self):
         """ Creates the UDP sockets """
         print("Create sockets")
 
+if __name__ == "__main__":
+    argParser = argparse.ArgumentParser()
+    argParser.add_argument('filename',help="config filename")
 
-rip_daemon = RipDaemon()
+    args = argParser.parse_args()
+    config_name = args.filename + ".txt"
+
+    if config_name is None:
+        print("No config file name was given")
+    else:
+        rip_daemon = RipDaemon(config_name)
