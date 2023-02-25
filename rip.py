@@ -6,14 +6,30 @@ class RipDaemon:
     def __init__(self):
         """ Class to create and manage a RIP daemon """
         print("Daemon created")
+        daemon_alive = True
 
         self.read_config()
 
         self.create_sockets()
 
-        while True:
+        self.readable = []
+        self.writeable = []
+        self.exceptional = []
+
+        while daemon_alive is True:
             # Main loop
-            time.sleep(5)
+            self.readable, self.writeable, self.exceptional = select.select([],[],[])
+
+            if len(self.readable) != 0:
+                print("Read from sockets")
+
+            if len(self.writeable) != 0:
+                # Probably wont want this one
+                print("Write to sockets")
+
+            if len(self.exceptional) != 0:
+                print("check exceptional")
+
             print("ALIVE")
 
     def read_config(self):
