@@ -39,7 +39,7 @@ class RipDaemon:
         print("Read config")
 
 
-    def validate_config():
+    def validate_config(router_ids, inputs_port, output_ports, timers):
         """ Checks  all values in config for correctness"""
         print("correct")
 
