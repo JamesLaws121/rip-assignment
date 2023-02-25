@@ -43,7 +43,7 @@ class RipDaemon:
         """ Checks  all values in config for correctness"""
         print("check")
 
-
+        print("check")
 
     def create_sockets(self):
         """ Creates the UDP sockets """
