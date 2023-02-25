@@ -84,18 +84,20 @@ class RipDaemon:
 
         """ For future maybe try to reduce magic numbers eg max_port instead of 64000"""
 
-        if self.router_id > 1 and self.router_id < 64000:
+        max_port = 64000
+
+        if self.router_id > 1 and self.router_id < max_port: #not sure if this makes sense to do cause its max id not ports
             return 1
         if len(set(self.input_ports)) != len(self.input_ports):
             return 2
         for i_port in self.input_ports:
-            if i_port < 1024 or i_port > 64000:
+            if i_port < 1024 or i_port > max_port:
                 return 3
         for o_port in self.outputs:
             output = o_port.split("-")
-            if int(self.outputs[0]) in inputs_port:
+            if int(self.outputs[0]) in self.inputs_port:
                 return 4
-            if int(self.outputs[0]) < 1024 or i_port > 64000:
+            if int(self.outputs[0]) < 1024 or i_port > max_port:
                 return 5
             #check if output[1,2] are ints
         return 0
