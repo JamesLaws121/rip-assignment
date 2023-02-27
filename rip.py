@@ -69,6 +69,26 @@ class RipDaemon:
         self.input_ports = config_dict["input_ports"]
         self.outputs = config_dict["outputs"]
 
+    def convert_config(self):
+        correct_input = []
+        correct_output = []
+        """Transforms the raw data from the configuration file into data readable by the validate_config function"""
+        try: 
+            self.router_id = int(self.router_id)
+
+        except ValueError:
+            return 1
+        
+        for port in self.input_ports:
+            try:
+                hold = int(port) #needs proper variable name
+            except ValueError:
+                return 2
+            correct_input.append(hold)
+        self.input_ports = correct_input
+
+        
+
     def validate_config(self):
         """ Checks  all values in config for correctness"""
 
@@ -85,8 +105,9 @@ class RipDaemon:
         """ For future maybe try to reduce magic numbers eg max_port instead of 64000"""
 
         max_port = 64000
+        max_id = 64000
 
-        if self.router_id > 1 and self.router_id < max_port: #not sure if this makes sense to do cause its max id not ports
+        if self.router_id > 1 and self.router_id < max_id: 
             return 1
         if len(set(self.input_ports)) != len(self.input_ports):
             return 2
@@ -95,9 +116,9 @@ class RipDaemon:
                 return 3
         for o_port in self.outputs:
             output = o_port.split("-")
-            if int(self.outputs[0]) in self.inputs_port:
+            if output[0] in self.inputs_port:
                 return 4
-            if int(self.outputs[0]) < 1024 or i_port > max_port:
+            if output[0] < 1024 or i_port > max_port:
                 return 5
             #check if output[1,2] are ints
         return 0
