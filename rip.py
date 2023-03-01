@@ -73,21 +73,56 @@ class RipDaemon:
         correct_input = []
         correct_output = []
         """Transforms the raw data from the configuration file into data readable by the validate_config function"""
+
+        """Error codes:
+            1: Router id is not a correct id
+            2: An input port doesnt have a correct port number
+            3: An output port has incorrect syntax
+            4: An output port number is incorrect
+            5: An outputs metric value is incorrect
+            6: An outputs peer router id is incorrect"""
+        #todo for clean up:
+        #change hold variables to better names
+        #maybe do something with error codes i.e. return an error message/make a function to do that
         try: 
             self.router_id = int(self.router_id)
 
         except ValueError:
             return 1
         
-        for port in self.input_ports:
+        for i_port in self.input_ports:
             try:
-                hold = int(port) #needs proper variable name
+                hold = int(i_port) #needs proper variable name
             except ValueError:
                 return 2
             correct_input.append(hold)
         self.input_ports = correct_input
 
-        
+        for o_port in self.outputs:
+            hold = o_port.split("-")
+            if len(hold) == len(o_port):
+                return 3
+            if len(hold[0]) != 4:
+                return 4
+            try:
+                hold[0] = int(hold[0])
+            except ValueError:
+                return 4
+            if len(hold[1]) != 1:
+                return 5
+            try:
+                hold[1] = int(hold[1])
+            except ValueError:
+                return 5
+            if len(hold[2]) != 4:
+                return 6
+            try:
+                hold[2] = int(hold[2])
+            except ValueError:
+                return 6
+            correct_output.append((hold[0], hold[1], hold[2]))
+        self.outputs = correct_output
+
 
     def validate_config(self):
         """ Checks  all values in config for correctness"""
@@ -100,7 +135,7 @@ class RipDaemon:
                     5: An output port number has not in range
                     6: """
 
-        """ You need to do type checking/coverting (: """
+        
 
         """ For future maybe try to reduce magic numbers eg max_port instead of 64000"""
 
