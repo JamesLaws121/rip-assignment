@@ -19,10 +19,20 @@ class RipDaemon:
         print("Daemon created")
         daemon_alive = True
 
+        self.router_id = []
+        self.input_ports = []
+
+        """[port, distance, id]"""
+        self.outputs = []
+
+        self.routing_table = {}
+
         self.read_config(config_name)
 
-            # Uncomment this to test your code
-        #self.validate_config()
+        self.convert_config()
+
+        self.validate_config()
+
 
         self.create_sockets()
 
@@ -50,6 +60,13 @@ class RipDaemon:
                 print("check exceptional")
 
             print("ALIVE")
+
+    def distance_vector():
+        return 0
+
+    def create_table(self):
+        for output in self.outputs:
+            self.routing_table[output[0]] = output[1]
 
     def read_config(self, config_name):
         """ Reads the configuration file """
@@ -92,7 +109,7 @@ class RipDaemon:
         #todo for clean up:
         #change hold variables to better names
         #maybe do something with error codes i.e. return an error message/make a function to do that
-        try: 
+        try:
             self.router_id = int(self.router_id)
 
         except ValueError:
@@ -143,14 +160,14 @@ class RipDaemon:
                     5: An output port number has not in range
                     6: """
 
-        
+
 
         """ For future maybe try to reduce magic numbers eg max_port instead of 64000"""
 
         max_port = 64000
         max_id = 64000
 
-        if self.router_id > 1 and self.router_id < max_id: 
+        if self.router_id > 1 and self.router_id < max_id:
             return 1
         if len(set(self.input_ports)) != len(self.input_ports):
             return 2
