@@ -1,4 +1,4 @@
-# import socket
+import socket
 import sys, getopt
 import select
 import argparse
@@ -69,6 +69,14 @@ class RipDaemon:
         self.input_ports = config_dict["input_ports"]
         self.outputs = config_dict["outputs"]
 
+
+    def socket_setup(self):
+        socket_dict = {}
+        for port in self.input_ports:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            socket_dict[port] = sock
+
+
     def convert_config(self):
         correct_input = []
         correct_output = []
@@ -90,37 +98,37 @@ class RipDaemon:
         except ValueError:
             return 1
         
-        for i_port in self.input_ports:
+        for i_port_string in self.input_ports:
             try:
-                hold = int(i_port) #needs proper variable name
+                i_port = int(i_port_string) #needs proper variable name
             except ValueError:
                 return 2
-            correct_input.append(hold)
+            correct_input.append(i_port)
         self.input_ports = correct_input
 
-        for o_port in self.outputs:
-            hold = o_port.split("-")
-            if len(hold) == len(o_port):
+        for output_string in self.outputs:
+            output = output_string.split("-")
+            if len(output) == len(output_string):
                 return 3
-            if len(hold[0]) != 4:
+            if len(output[0]) != 4:
                 return 4
             try:
-                hold[0] = int(hold[0])
+                output[0] = int(output[0])
             except ValueError:
                 return 4
-            if len(hold[1]) != 1:
+            if len(output[1]) != 1:
                 return 5
             try:
-                hold[1] = int(hold[1])
+                output[1] = int(output[1])
             except ValueError:
                 return 5
-            if len(hold[2]) != 4:
+            if len(output[2]) != 4:
                 return 6
             try:
-                hold[2] = int(hold[2])
+                output[2] = int(output[2])
             except ValueError:
                 return 6
-            correct_output.append((hold[0], hold[1], hold[2]))
+            correct_output.append((output[0], output[1], output[2]))
         self.outputs = correct_output
 
 
@@ -149,8 +157,7 @@ class RipDaemon:
         for i_port in self.input_ports:
             if i_port < 1024 or i_port > max_port:
                 return 3
-        for o_port in self.outputs:
-            output = o_port.split("-")
+        for output in self.outputs:
             if output[0] in self.inputs_port:
                 return 4
             if output[0] < 1024 or i_port > max_port:
