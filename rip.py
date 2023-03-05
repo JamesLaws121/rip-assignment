@@ -2,6 +2,11 @@ import socket
 import sys, getopt
 import select
 import argparse
+import time
+
+"""
+Current timer has flaw where reading will muck up how often it is polled
+"""
 
 
 """
@@ -25,6 +30,9 @@ class RipDaemon:
         """[port, distance, id]"""
         self.outputs = []
 
+        """Stores sockets"""
+        self.socket_dict = {}
+
         self.routing_table = {}
 
         self.read_config(config_name)
@@ -43,11 +51,20 @@ class RipDaemon:
         # Need to look into this
         self.exceptional = []
 
+        # Time in between sending update things (in seconds)
+        self.timeout = 10
+        # Time timer started
+        self.start = 0
+
+        self.display_details()
+
         return
 
         while daemon_alive is True:
             # Main loop
-            readable, writeable, exceptional = select.select(self.input_ports, [], [])
+            readable, writeable, exceptional = select.select(self.input_ports, [], [], self.timeout)
+
+            # Might need to make this multithreaded
 
             if len(readable) != 0:
                 print("Read from sockets")
@@ -59,14 +76,53 @@ class RipDaemon:
             if len(exceptional) != 0:
                 print("check exceptional")
 
+            if self.check_timer():
+                self.send_updates()
+
             print("ALIVE")
 
-    def distance_vector():
-        return 0
+    def display_details(self):
+        print("***********************")
+
+        print("Router ID")
+        print(self.router_id)
+        print("\n")
+
+        print("Input ports: ")
+        for port in self.input_ports:
+            print(port)
+        print("\n")
+
+        print("Output ports: ")
+        for port in self.outputs:
+            print(port)
+        print("\n")
+
+        print("***********************")
+
+    def calculate_vector(self):
+        return 1
 
     def create_table(self):
         for output in self.outputs:
             self.routing_table[output[0]] = output[1]
+
+    def update_table(self):
+        # Do later
+
+    def send_updates(self):
+        # Do later
+
+    def check_timer(self):
+        if(self.start < time.time()):
+            self.start = time.time() + self.timeout
+            return True
+        return False
+
+    def socket_setup(self):
+        for port in self.input_ports:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.socket_dict[port] = sock
 
     def read_config(self, config_name):
         """ Reads the configuration file """
@@ -87,11 +143,7 @@ class RipDaemon:
         self.outputs = config_dict["outputs"]
 
 
-    def socket_setup(self):
-        socket_dict = {}
-        for port in self.input_ports:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            socket_dict[port] = sock
+
 
 
     def convert_config(self):
@@ -114,7 +166,7 @@ class RipDaemon:
 
         except ValueError:
             return 1
-        
+
         for i_port_string in self.input_ports:
             try:
                 i_port = int(i_port_string) #needs proper variable name
@@ -152,17 +204,15 @@ class RipDaemon:
     def validate_config(self):
         """ Checks  all values in config for correctness"""
 
-        """Error codes:
-                    1: Router id not in integer range
-                    2: 2 or more input ports have the same port number
-                    3: An input port number has not in range
-                    4: Output port number is the same as Input port number
-                    5: An output port number has not in range
-                    6: """
-
-
-
-        """ For future maybe try to reduce magic numbers eg max_port instead of 64000"""
+        """
+        Error codes:
+            1: Router id not in integer range
+            2: 2 or more input ports have the same port number
+            3: An input port number has not in range
+            4: Output port number is the same as Input port number
+            5: An output port number has not in range
+            6:
+        """
 
         max_port = 64000
         max_id = 64000
