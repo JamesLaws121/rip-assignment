@@ -35,6 +35,9 @@ class RipDaemon:
 
         self.routing_table = {}
 
+        """ Used to tell when to send advts"""
+        self.advt_counter = 0
+
         self.read_config(config_name)
 
         self.convert_config()
@@ -109,9 +112,11 @@ class RipDaemon:
 
     def update_table(self):
         # Do later
+        print("Update")
 
     def send_updates(self):
         # Do later
+        print("Send update")
 
     def check_timer(self):
         if(self.start < time.time()):
