@@ -31,7 +31,7 @@ class RipDaemon:
         self.outputs = []
 
         """Stores sockets"""
-        self.socket_dict = {}
+        self.input_sockets = []
 
         self.routing_table = {}
 
@@ -45,7 +45,7 @@ class RipDaemon:
         self.validate_config()
 
 
-        self.create_sockets()
+        self.socket_setup()
 
         # Ports to wait on input
         self.readable = []
@@ -61,11 +61,11 @@ class RipDaemon:
 
         self.display_details()
 
-        return
+        print(self.input_sockets)
 
         while daemon_alive is True:
             # Main loop
-            readable, writeable, exceptional = select.select(self.input_ports, [], [], self.timeout)
+            readable, writeable, exceptional = select.select(self.input_sockets, [], [], self.timeout)
 
             # Might need to make this multithreaded
 
@@ -108,7 +108,7 @@ class RipDaemon:
 
     def create_table(self):
         for output in self.outputs:
-            self.routing_table[output[0]] = output[1]
+            self.routing_table[(output[0], output[2])] = output[1]
 
     def update_table(self):
         # Do later
@@ -125,9 +125,11 @@ class RipDaemon:
         return False
 
     def socket_setup(self):
-        for port in self.input_ports:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.socket_dict[port] = sock
+        """ Creates udp sockets """
+        for port in self.input_sockets:
+            udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            udp_socket.bind("127.0.0.1", port)
+            self.input_sockets.append(udp_socket)
 
     def read_config(self, config_name):
         """ Reads the configuration file """
@@ -146,10 +148,6 @@ class RipDaemon:
         self.router_id = config_dict["router_id"][0]
         self.input_ports = config_dict["input_ports"]
         self.outputs = config_dict["outputs"]
-
-
-
-
 
     def convert_config(self):
         correct_input = []
@@ -236,10 +234,6 @@ class RipDaemon:
                 return 5
             #check if output[1,2] are ints
         return 0
-
-    def create_sockets(self):
-        """ Creates the UDP sockets """
-        print("Create sockets")
 
 if __name__ == "__main__":
     argParser = argparse.ArgumentParser()
