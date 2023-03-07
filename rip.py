@@ -172,7 +172,7 @@ class RipDaemon:
 
         for i_port_string in self.input_ports:
             try:
-                i_port = int(i_port_string) #needs proper variable name
+                i_port = int(i_port_string) 
             except ValueError:
                 return 2
             correct_input.append(i_port)
@@ -182,28 +182,25 @@ class RipDaemon:
             output = output_string.split("-")
             if len(output) == len(output_string):
                 return 3
-            if len(output[0]) != 4:
-                return 4
+            
             try:
                 output[0] = int(output[0])
             except ValueError:
                 return 4
-            if len(output[1]) != 1:
-                return 5
+            
             try:
                 output[1] = int(output[1])
             except ValueError:
                 return 5
-            if len(output[2]) != 4:
-                return 6
+            
             try:
                 output[2] = int(output[2])
             except ValueError:
                 return 6
             correct_output.append((output[0], output[1], output[2]))
         self.outputs = correct_output
-
-
+        return 0
+    
     def validate_config(self):
         """ Checks  all values in config for correctness"""
 
