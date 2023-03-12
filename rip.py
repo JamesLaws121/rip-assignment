@@ -24,15 +24,20 @@ class RipDaemon:
         print("Daemon created")
         daemon_alive = True
 
-        self.router_id = []
-        self.input_ports = []
+        """Unique identifire for this router"""
+        self.router_id = 0
+
 
         """[port, distance, id]"""
         self.outputs = []
 
+        """ Ports to listen on"""
+        self.input_ports = {}
+
         """Stores sockets"""
         self.input_sockets = []
 
+        """ router_id : [port, metric]"""
         self.routing_table = {}
 
         """ Used to tell when to send advts"""
@@ -40,7 +45,9 @@ class RipDaemon:
 
         self.read_config(config_name)
 
-        self.convert_config()
+        output = self.convert_config()
+
+        print(output)
 
         self.validate_config()
 
@@ -103,20 +110,35 @@ class RipDaemon:
 
         print("***********************")
 
-    def calculate_vector(self):
-        return 1
 
     def create_table(self):
         for output in self.outputs:
-            self.routing_table[(output[0], output[2])] = output[1]
+            self.routing_table[output[2]] = [output[0], output[1]]
 
-    def update_table(self):
+    def update_table(self, new_data, peer_id):
         # Do later
         print("Update")
+        # peer_id is the router the data came from
+
+        # This block is ugly and needs to be refactored
+        for id in new_data:
+            if id not in self.routing_table:
+                self.routing_table[id] = [self.routing_table[peer_id][0], (new_data[id][1] + self.routing_table[peer_id][1])]
+                continue
+
+            new = new_data[id][1] + self.routing_table[peer_id][1]
+            if new  < self.routing_table[id][1]:
+                self.routing_table[id] = [self.routing_table[peer_id][0], new]
+
+
 
     def send_updates(self):
         # Do later
         print("Send update")
+
+        print(self.routing_table)
+
+        print("Sent")
 
     def check_timer(self):
         if(self.start < time.time()):
@@ -172,7 +194,7 @@ class RipDaemon:
 
         for i_port_string in self.input_ports:
             try:
-                i_port = int(i_port_string) 
+                i_port = int(i_port_string)
             except ValueError:
                 return 2
             correct_input.append(i_port)
@@ -180,19 +202,20 @@ class RipDaemon:
 
         for output_string in self.outputs:
             output = output_string.split("-")
+            print(output)
             if len(output) == len(output_string):
                 return 3
-            
+
             try:
                 output[0] = int(output[0])
             except ValueError:
                 return 4
-            
+
             try:
                 output[1] = int(output[1])
             except ValueError:
                 return 5
-            
+
             try:
                 output[2] = int(output[2])
             except ValueError:
@@ -200,7 +223,7 @@ class RipDaemon:
             correct_output.append((output[0], output[1], output[2]))
         self.outputs = correct_output
         return 0
-    
+
     def validate_config(self):
         """ Checks  all values in config for correctness"""
 
@@ -225,7 +248,7 @@ class RipDaemon:
             if i_port < 1024 or i_port > max_port:
                 return 3
         for output in self.outputs:
-            if output[0] in self.inputs_port:
+            if output[0] in self.input_ports:
                 return 4
             if output[0] < 1024 or i_port > max_port:
                 return 5
