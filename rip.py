@@ -193,10 +193,7 @@ class RipDaemon:
             return 1
 
         for i_port_string in self.input_ports:
-            try:
-                i_port = int(i_port_string)
-            except ValueError:
-                return 2
+            i_port = validate_int(i_port_string)
             correct_input.append(i_port)
         self.input_ports = correct_input
 
@@ -206,23 +203,18 @@ class RipDaemon:
             if len(output) == len(output_string):
                 return 3
 
-            try:
-                output[0] = int(output[0])
-            except ValueError:
-                return 4
-
-            try:
-                output[1] = int(output[1])
-            except ValueError:
-                return 5
-
-            try:
-                output[2] = int(output[2])
-            except ValueError:
-                return 6
-            correct_output.append((output[0], output[1], output[2]))
+            o_port = validate_int(output[0])
+            o_metric = validate_int(output[1])
+            o_r_id = validate_int(output[2])
+            correct_output.append((o_port, o_metric, o_r_id))
         self.outputs = correct_output
         return 0
+    
+    def validate_int(self, value):
+        if value.isdigit():
+            return int(value)
+        #talk to james about making a function that stops process because of error
+        #return False
 
     def validate_config(self):
         """ Checks  all values in config for correctness"""
