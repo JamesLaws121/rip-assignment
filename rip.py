@@ -32,7 +32,7 @@ class RipDaemon:
         self.outputs = []
 
         """ Ports to listen on"""
-        self.input_ports = {}
+        self.input_ports = []
 
         """Stores sockets"""
         self.input_sockets = []
@@ -116,7 +116,6 @@ class RipDaemon:
             self.routing_table[output[2]] = [output[0], output[1]]
 
     def update_table(self, new_data, peer_id):
-        # Do later
         print("Update")
         # peer_id is the router the data came from
 
@@ -138,6 +137,10 @@ class RipDaemon:
 
         print(self.routing_table)
 
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        for output in self.outputs:
+            sock.sendto(bytes("Hello", "utf-8"), ("127.0.0.1", output[0]))
+
         print("Sent")
 
     def check_timer(self):
@@ -148,9 +151,9 @@ class RipDaemon:
 
     def socket_setup(self):
         """ Creates udp sockets """
-        for port in self.input_sockets:
+        for port in self.input_ports:
             udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            udp_socket.bind("127.0.0.1", port)
+            udp_socket.bind(("127.0.0.1", port))
             self.input_sockets.append(udp_socket)
 
     def read_config(self, config_name):
@@ -193,7 +196,7 @@ class RipDaemon:
             return 1
 
         for i_port_string in self.input_ports:
-            i_port = validate_int(i_port_string)
+            i_port = self.validate_int(i_port_string)
             correct_input.append(i_port)
         self.input_ports = correct_input
 
@@ -203,13 +206,13 @@ class RipDaemon:
             if len(output) == len(output_string):
                 return 3
 
-            o_port = validate_int(output[0])
-            o_metric = validate_int(output[1])
-            o_r_id = validate_int(output[2])
+            o_port = self.validate_int(output[0])
+            o_r_id = self.validate_int(output[2])
+            o_metric = self.validate_int(output[1])
             correct_output.append((o_port, o_metric, o_r_id))
         self.outputs = correct_output
         return 0
-    
+
     def validate_int(self, value):
         if value.isdigit():
             return int(value)
