@@ -78,6 +78,7 @@ class RipDaemon:
 
             if len(readable) != 0:
                 print("Read from sockets")
+                self.read_input(readable)
 
             if len(writeable) != 0:
                 # Probably wont want this one
@@ -109,6 +110,15 @@ class RipDaemon:
         print("\n")
 
         print("***********************")
+
+    def read_input(self, readable):
+        """ Reads updates from routers"""
+        for sock in readable:
+            data, addr = sock.recvfrom(1024)
+            data = data.decode('utf-8')
+            print(data + " read from: " + str(sock))
+
+        return data
 
 
     def create_table(self):
