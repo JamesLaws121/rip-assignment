@@ -188,17 +188,9 @@ class RipDaemon:
         correct_input = []
         correct_output = []
         """Transforms the raw data from the configuration file into data readable by the validate_config function"""
+        #print whats going wrong
 
-        """Error codes:
-            1: Router id is not a correct id
-            2: An input port doesnt have a correct port number
-            3: An output port has incorrect syntax
-            4: An output port number is incorrect
-            5: An outputs metric value is incorrect
-            6: An outputs peer router id is incorrect"""
-        #todo for clean up:
-        #change hold variables to better names
-        #maybe do something with error codes i.e. return an error message/make a function to do that
+    
         try:
             self.router_id = int(self.router_id)
 
@@ -226,8 +218,7 @@ class RipDaemon:
     def validate_int(self, value):
         if value.isdigit():
             return int(value)
-        #talk to james about making a function that stops process because of error
-        #return False
+        -
 
     def validate_config(self):
         """ Checks  all values in config for correctness"""
