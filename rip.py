@@ -3,6 +3,20 @@ import sys, getopt
 import select
 import argparse
 import time
+import json
+
+"""
+To Do
+Timers for router entries
+    - Add timers to routing_table -- tick
+    - make timers count up
+
+Send a bytearray out of the routing table
+    - create conversion function
+    - create function to covert this back
+"""
+
+
 
 """
 Current timer has flaw where reading will muck up how often it is polled
@@ -37,7 +51,7 @@ class RipDaemon:
         """Stores sockets"""
         self.input_sockets = []
 
-        """ router_id : [port, metric]"""
+        """ router_id : [port, metric, timer]"""
         self.routing_table = {}
 
         """ Used to tell when to send advts"""
@@ -51,6 +65,7 @@ class RipDaemon:
 
         self.validate_config()
 
+        self.create_table()
 
         self.socket_setup()
 
@@ -66,7 +81,7 @@ class RipDaemon:
         # Time timer started
         self.start = 0
 
-        self.display_details()
+        self.display_config_details()
 
         print(self.input_sockets)
 
@@ -91,9 +106,12 @@ class RipDaemon:
                 self.send_updates()
 
             print("ALIVE")
+            print("")
+            self.display_details()
+            print("")
 
-    def display_details(self):
-        print("***********************")
+    def display_config_details(self):
+        print("***********************\n")
 
         print("Router ID")
         print(self.router_id)
@@ -109,55 +127,94 @@ class RipDaemon:
             print(port)
         print("\n")
 
-        print("***********************")
+        print("***********************\n")
 
-    def read_input(self, readable):
-        """ Reads updates from routers"""
-        for sock in readable:
-            data, addr = sock.recvfrom(1024)
-            data = data.decode('utf-8')
-            print(data + " read from: " + str(sock))
+    def display_details(self):
+        print("***********************\n")
+        for router_id in self.routing_table:
+            print(router_id)
+            print(self.routing_table[router_id])
+            print("")
 
-        return data
+        print("***********************\n")
 
+
+    def check_timer(self):
+        """ Checks if its time to send router adverts"""
+
+        if(self.start < time.time()):
+            self.start = time.time() + self.timeout
+            return True
+        return False
+
+    def update_table_timers(self):
+        """ Update the time since an entry was last updated"""
+        print("do this later")
+        print("not important")
 
     def create_table(self):
         for output in self.outputs:
-            self.routing_table[output[2]] = [output[0], output[1]]
+            self.routing_table[output[2]] = [output[0], output[1], 0]
 
     def update_table(self, new_data, peer_id):
         print("Update")
         # peer_id is the router the data came from
+        # new_data is data received from peer
 
         # This block is ugly and needs to be refactored
+        print(new_data)
         for id in new_data:
             if id not in self.routing_table:
-                self.routing_table[id] = [self.routing_table[peer_id][0], (new_data[id][1] + self.routing_table[peer_id][1])]
-                continue
+                self.routing_table[id] = [self.routing_table[peer_id][0], (new_data[id][1] + self.routing_table[peer_id][1]), 0]
+            else:
+                new = new_data[id][1] + self.routing_table[peer_id][1]
+                if new  < self.routing_table[id][1]:
+                    self.routing_table[id] = [self.routing_table[peer_id][0], new, 0]
 
-            new = new_data[id][1] + self.routing_table[peer_id][1]
-            if new  < self.routing_table[id][1]:
-                self.routing_table[id] = [self.routing_table[peer_id][0], new]
+    def encode_table(self):
+        print("table encoded")
 
+        data = json.dumps({"data": [self.routing_table, self.router_id]})
+        return(bytes(data, encoding="utf-8"))
 
+    def int_keys(self, received_table):
+        new_table = {}
+
+        for id in received_table:
+            new_table[int(id)] = received_table[id]
+
+        return new_table
+
+    def decode_table(self, data):
+        print("table decode")
+        decoded_data = data.decode('utf-8')
+        received_table, next_hop  = json.loads(decoded_data)["data"]
+
+        received_table = self.int_keys(received_table)
+
+        return received_table, next_hop
 
     def send_updates(self):
         # Do later
-        print("Send update")
 
         print(self.routing_table)
 
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         for output in self.outputs:
-            sock.sendto(bytes("Hello", "utf-8"), ("127.0.0.1", output[0]))
+            encoded_table = self.encode_table()
+            sock.sendto(encoded_table, ("127.0.0.1", output[0]))
 
-        print("Sent")
+    def read_input(self, readable):
+        """ Reads updates from routers"""
+        for sock in readable:
+            data, addr = sock.recvfrom(1024)
+            data, next_hop = self.decode_table(data)
+            self.update_table(data, next_hop)
 
-    def check_timer(self):
-        if(self.start < time.time()):
-            self.start = time.time() + self.timeout
-            return True
-        return False
+        return data
+
+
+
 
     def socket_setup(self):
         """ Creates udp sockets """
@@ -168,7 +225,6 @@ class RipDaemon:
 
     def read_config(self, config_name):
         """ Reads the configuration file """
-        print("Read config")
 
         config_file = open(config_name)
 
@@ -188,9 +244,17 @@ class RipDaemon:
         correct_input = []
         correct_output = []
         """Transforms the raw data from the configuration file into data readable by the validate_config function"""
-        #print whats going wrong
 
-    
+        """Error codes:
+            1: Router id is not a correct id
+            2: An input port doesnt have a correct port number
+            3: An output port has incorrect syntax
+            4: An output port number is incorrect
+            5: An outputs metric value is incorrect
+            6: An outputs peer router id is incorrect"""
+        #todo for clean up:
+        #change hold variables to better names
+        #maybe do something with error codes i.e. return an error message/make a function to do that
         try:
             self.router_id = int(self.router_id)
 
@@ -218,7 +282,8 @@ class RipDaemon:
     def validate_int(self, value):
         if value.isdigit():
             return int(value)
-        -
+        #talk to james about making a function that stops process because of error
+        #return False
 
     def validate_config(self):
         """ Checks  all values in config for correctness"""

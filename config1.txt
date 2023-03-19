@@ -1,0 +1,3 @@
+router_id:2
+input_ports:6000
+outputs:6000-0-2, 5000-4-1, 7000-4-3
