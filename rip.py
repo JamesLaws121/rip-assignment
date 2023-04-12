@@ -1,17 +1,19 @@
+import argparse
+import json
+import select
 import socket
 import sys
-
-import select
-import argparse
 import time
-import json
+
+import threading
 
 
 
 """
 Notes on potential issues
 Current timer might have flaw where reading will muck up how often it is polled
-this probably dosn't matter
+this probably doesn't matter
+can probably be fixed with some threading and better scheduling
 """
 
 
@@ -22,6 +24,16 @@ python rip.py config
             ^^filename^^
 
 I made it add the .txt might change this later
+
+Current implementation initialises routing table from the config file this is not correct
+A router should only be added to the routing table when a packet is received from the router
+
+So we are going to start by doing a broadcast to all neighbouring routers
+
+Need to add check to see if metric on both side of route are same
+
+Need to perform validity checks on incoming packets
+
 """
 
 
@@ -46,8 +58,7 @@ class RipDaemon:
         self.output_socket = self.input_sockets[0]
 
         # router_id : [port, metric, timer]
-        self.routing_table = {}
-        self.create_table()
+        self.routing_table = {self.router_id: [0, 0, 0]}
 
         # Ports ready to read from
         self.readable = []
@@ -65,8 +76,6 @@ class RipDaemon:
 
         self.display_config_details()
 
-        print(self.input_sockets)
-
         while daemon_alive is True:
             # Main loop
             readable, writeable, exceptional = select.select(self.input_sockets, [], [], self.timeout)
@@ -74,7 +83,8 @@ class RipDaemon:
             # Might need to make this use multithreading
 
             if len(readable) != 0:
-                print("Read from sockets")
+                # Read from sockets
+                # threading.Thread(target=self.read_input, args=readable)
                 self.read_input(readable)
 
             if len(writeable) != 0:
@@ -87,41 +97,37 @@ class RipDaemon:
             if self.check_timer():
                 self.send_updates()
 
-            print("ALIVE")
             print("")
             self.display_details()
             print("")
 
     def display_config_details(self):
         print("***********************\n")
+        print("***** Config file *****")
 
-        print("Router ID")
-        print(self.router_id)
-        print("\n")
+        print(f"Router ID: {self.router_id}")
 
-        print("Input ports: ")
-        for port in self.input_ports:
-            print(port)
-        print("\n")
+        print(f"Input ports: {[port for port in self.input_ports]} \n")
 
-        print("Output ports: ")
-        for port in self.outputs:
-            print(port)
-        print("\n")
+        print("Outputs: ")
+        for output in self.outputs:
+            print(f"Port: {output[0]} Id: {output[1]} Metric {output[2]}")
 
-        print("***********************\n")
+        print("\n***********************\n")
 
     def display_details(self):
         print("***********************\n")
-        for router_id in self.routing_table:
-            print(router_id)
-            print(self.routing_table[router_id])
+        print("**** Routing table ****")
+        for router_id, value in self.routing_table.items():
+            print(f"Router Id: {router_id}")
+            print(f"Port: {value[0]}")
+            print(f"Metric: {value[1]}")
             print("")
 
         print("***********************\n")
 
     def check_timer(self):
-        """ Checks if its time to send router adverts"""
+        """ Checks if it's time to send router adverts"""
 
         if self.start < time.time():
             self.start = time.time() + self.timeout
@@ -134,66 +140,96 @@ class RipDaemon:
         print("not important")
         self.display_details()
 
-    def create_table(self):
-        for output in self.outputs:
-            self.routing_table[output[2]] = [output[0], output[1], 0]
-
-    def update_table(self, new_data, peer_id):
-        print("Update")
-        # peer_id is the router the data came from
-        # new_data is data received from peer
-
-        # This block is ugly and needs to be refactored
-        print(new_data)
-        for id in new_data:
-            if id not in self.routing_table:
-                self.routing_table[id] = [self.routing_table[peer_id][0], (new_data[id][1] + self.routing_table[peer_id][1]), 0]
-            else:
-                new = new_data[id][1] + self.routing_table[peer_id][1]
-                if new < self.routing_table[id][1]:
-                    self.routing_table[id] = [self.routing_table[peer_id][0], new, 0]
-
-    def encode_table(self):
-        print("table encoded")
-
-        data = json.dumps({"data": [self.routing_table, self.router_id]})
-        return bytes(data, encoding="utf-8")
-
-    def int_keys(self, received_table):
-        new_table = {}
-
-        for id in received_table:
-            new_table[int(id)] = received_table[id]
-
-        return new_table
-
-    def decode_table(self, data):
-        print("table decode")
-        decoded_data = data.decode('utf-8')
-        received_table, next_hop  = json.loads(decoded_data)["data"]
-
-        received_table = self.int_keys(received_table)
-
-        return received_table, next_hop
-
     def send_updates(self):
-        """ Sends the routers table to its neighbour routers"""
-        print(self.routing_table)
-
+        """ Sends the routers table to its neighbour routers """
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        encoded_table = self.encode_table()
         for output in self.outputs:
-            encoded_table = self.encode_table()
             sock.sendto(encoded_table, ("127.0.0.1", output[0]))
 
     def read_input(self, readable):
-        """ Reads updates from routers"""
+        """ Reads updates from routers """
         for sock in readable:
             data, addr = sock.recvfrom(1024)
-            data, next_hop = self.decode_table(data)
+            data, next_hop = RipDaemon.decode_table(data)
             self.update_table(data, next_hop)
 
         return data
 
+    def encode_table(self):
+        """ Creates the packet to be sent"""
+        # Header is 4 bytes
+        # An entry is 20 bytes
+        packet_size = 4 + len(self.routing_table) * 20
+        packet = bytearray(packet_size)
+        packet[0:4] = bytearray([self.router_id])
+
+        peer_ids = [{key: self.routing_table[key]} for key in self.routing_table]
+        count = 0
+        for i in range(4, packet_size, 20):
+            entry = json.dumps(peer_ids[count])
+            packet[i: i + 20] = bytearray(entry.encode("utf-8"))
+            count += 1
+
+        # data = json.dumps({"data": [self.routing_table, self.router_id]})
+        # encoded_table = bytes(data, encoding="utf-8")
+        # router_id = bytes(str(self.router_id), encoding="utf-8")
+
+        return packet
+
+    @staticmethod
+    def decode_table(data):
+        """ Converts data received to usable format"""
+        # decoded_data = data.decode('utf-8')
+        # received_table, next_hop = json.loads(decoded_data)["data"]
+        # Converts the dictionary keys to integers
+        # received_table = {int(id): received_table[id] for id in received_table}
+        # return received_table, next_hop
+
+        router_table = {}
+        peer_id = int.from_bytes(data[0:4], "little")
+
+        count = 0
+        for i in range(4, len(data), 20):
+            entry = data[i: i + 20].decode('utf-8').split('\0')[0]
+            router_table.update(json.loads(entry))
+            count += 1
+
+        router_table = {int(id): router_table[id] for id in router_table}
+
+        return router_table, peer_id
+
+    def update_table(self, new_data, peer_id):
+        """ Updates the routers table with the table received from a peer"""
+        # peer_id is the router the data came from
+        # new_data is data received from peer
+
+        if peer_id not in self.routing_table:
+            self.add_peer(peer_id)
+
+        for id in new_data:
+            if id not in self.routing_table:
+                # Add new entry to table
+                self.routing_table[id] = [self.routing_table[peer_id][0], (new_data[id][1] + self.routing_table[peer_id][1]), 0]
+            else:
+                # Update existing entry in table
+                new_metric = new_data[id][1] + self.routing_table[peer_id][1]
+                if new_metric < self.routing_table[id][1]:
+                    self.routing_table[id] = [self.routing_table[peer_id][0], new_metric, 0]
+
+    def add_peer(self, peer_id):
+        """ Adds a peer router to the routing table """
+        for output in self.outputs:
+            if output[2] == peer_id:
+                port = output[0]
+                metric = output[1]
+
+        self.routing_table[peer_id] = [port, metric, 0]
+
+    def end_daemon(self):
+        print("Destroying daemon")
+        self.display_details()
+        sys.exit()
 
     @staticmethod
     def socket_setup(input_ports):
@@ -290,20 +326,15 @@ class RipDaemon:
             # check if output[1,2] are ints
         return 1, "All good"
 
-    def end_daemon(self):
-        print("Destroying daemon")
-        self.display_details()
-        sys.exit()
-
 
 if __name__ == "__main__":
     argParser = argparse.ArgumentParser()
-    argParser.add_argument('filename', help="config filename")
+    argParser.add_argument('filename', help="The name of the config file to use.")
 
     args = argParser.parse_args()
-    config_imput = args.filename + ".txt"
+    config_input = args.filename + ".txt"
 
-    if config_imput is None:
+    if config_input is None:
         print("No config file name was given")
     else:
-        rip_daemon = RipDaemon(config_imput)
+        rip_daemon = RipDaemon(config_input)
