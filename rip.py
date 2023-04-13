@@ -45,11 +45,15 @@ class RipDaemon:
 
         """ Parse config file for valid id, ports and outputs"""
         daemon_input = RipDaemon.read_config(config_name)
-
         if daemon_input == -1:
             self.end_daemon()
 
+        # outputs: format: [[port, metric, id], ...]
         self.router_id, self.input_ports, self.outputs = daemon_input
+
+        # output_routes: Used to match router id to physical port
+        # format: {router_id: port}
+        self.output_routes = {output[2]: output[0] for output in self.outputs}
 
         # Setup sockets to receive data with
         self.input_sockets = self.socket_setup(self.input_ports)
@@ -57,8 +61,8 @@ class RipDaemon:
         # Generic socket used to send updates
         self.output_socket = self.input_sockets[0]
 
-        # router_id : [port, metric, timer]
-        self.routing_table = {self.router_id: [0, 0, 0]}
+        # router_id : [next_hop, metric, timer]
+        self.routing_table = {}
 
         # Ports ready to read from
         self.readable = []
@@ -120,7 +124,7 @@ class RipDaemon:
         print("**** Routing table ****")
         for router_id, value in self.routing_table.items():
             print(f"Router Id: {router_id}")
-            print(f"Port: {value[0]}")
+            print(f"Next hop: {value[0]}")
             print(f"Metric: {value[1]}")
             print("")
 
@@ -144,8 +148,8 @@ class RipDaemon:
         """ Sends the routers table to its neighbour routers """
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         encoded_table = self.encode_table()
-        for output in self.outputs:
-            sock.sendto(encoded_table, ("127.0.0.1", output[0]))
+        for id, port in self.output_routes.items():
+            sock.sendto(encoded_table, ("127.0.0.1", port))
 
     def read_input(self, readable):
         """ Reads updates from routers """
@@ -157,23 +161,31 @@ class RipDaemon:
         return data
 
     def encode_table(self):
-        """ Creates the packet to be sent"""
+        """ Creates the packet to be sent """
         # Header is 4 bytes
         # An entry is 20 bytes
         packet_size = 4 + len(self.routing_table) * 20
         packet = bytearray(packet_size)
-        packet[0:4] = bytearray([self.router_id])
+        # packet[0:4] = bytearray([self.router_id])
+        packet[0:4] = self.router_id.to_bytes(4, byteorder='little')
 
-        peer_ids = [{key: self.routing_table[key]} for key in self.routing_table]
+        peer_ids = [(key, self.routing_table[key][1]) for key in self.routing_table]
         count = 0
         for i in range(4, packet_size, 20):
-            entry = json.dumps(peer_ids[count])
-            packet[i: i + 20] = bytearray(entry.encode("utf-8"))
+            entry = peer_ids[count]
+            # Address family identifier(2)
+            packet[i: i + 2] = bytearray(2)
+            # Zero(2)
+            packet[i + 2: i + 4] = bytearray(2)
+            # Router Id(4)
+            packet[i + 4: i + 8] = entry[0].to_bytes(4, byteorder='little')
+            # Zero(4)
+            packet[i + 8: i + 12] = bytearray(4)
+            # Zero(4)
+            packet[i + 12: i + 16] = bytearray(4)
+            # Metric(4)
+            packet[i + 16: i + 20] = entry[1].to_bytes(4, byteorder='little')
             count += 1
-
-        # data = json.dumps({"data": [self.routing_table, self.router_id]})
-        # encoded_table = bytes(data, encoding="utf-8")
-        # router_id = bytes(str(self.router_id), encoding="utf-8")
 
         return packet
 
@@ -186,50 +198,59 @@ class RipDaemon:
         # received_table = {int(id): received_table[id] for id in received_table}
         # return received_table, next_hop
 
-        router_table = {}
+        # Table of received data format : {id : metric}
+        received_table = {}
         peer_id = int.from_bytes(data[0:4], "little")
 
-        count = 0
         for i in range(4, len(data), 20):
-            entry = data[i: i + 20].decode('utf-8').split('\0')[0]
-            router_table.update(json.loads(entry))
-            count += 1
+            # entry = data[i: i + 20].decode('utf-8').split('\0')[0]
+            # router_table.update(json.loads(entry))
+            entry = data[i: i + 20]
+            id  = int.from_bytes(data[i+4: i+8], "little")
+            metric = int.from_bytes(data[i+16:i+20], "little")
+            received_table.update({id : metric})
 
-        router_table = {int(id): router_table[id] for id in router_table}
-
-        return router_table, peer_id
+        return received_table, peer_id
 
     def update_table(self, new_data, peer_id):
         """ Updates the routers table with the table received from a peer"""
-        # peer_id is the router the data came from
-        # new_data is data received from peer
 
         if peer_id not in self.routing_table:
             self.add_peer(peer_id)
 
+        print(peer_id)
+        print(new_data)
         for id in new_data:
+            if id == self.router_id:
+                continue
+            metric = new_data[id] + self.routing_table[peer_id][1]
+
             if id not in self.routing_table:
                 # Add new entry to table
-                self.routing_table[id] = [self.routing_table[peer_id][0], (new_data[id][1] + self.routing_table[peer_id][1]), 0]
+                print(f"Adding entry: {id} to the table")
+                self.routing_table[id] = [peer_id, metric, 0]
             else:
                 # Update existing entry in table
-                new_metric = new_data[id][1] + self.routing_table[peer_id][1]
+                print(f"Updating entry: {id} in the table")
+                new_metric = new_data[id] + self.routing_table[peer_id][1]
                 if new_metric < self.routing_table[id][1]:
-                    self.routing_table[id] = [self.routing_table[peer_id][0], new_metric, 0]
+                    self.routing_table[id] = [peer_id, new_metric, 0]
 
     def add_peer(self, peer_id):
         """ Adds a peer router to the routing table """
+
         for output in self.outputs:
             if output[2] == peer_id:
-                port = output[0]
                 metric = output[1]
 
-        self.routing_table[peer_id] = [port, metric, 0]
+        self.routing_table[peer_id] = [peer_id, metric, 0]
 
     def end_daemon(self):
+        """ Destory router daemon"""
         print("Destroying daemon")
         self.display_details()
         sys.exit()
+
 
     @staticmethod
     def socket_setup(input_ports):
