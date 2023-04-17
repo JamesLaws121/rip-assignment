@@ -25,15 +25,16 @@ python rip.py config
 
 I made it add the .txt might change this later
 
-Current implementation initialises routing table from the config file this is not correct
-A router should only be added to the routing table when a packet is received from the router
-
-So we are going to start by doing a broadcast to all neighbouring routers
-
-Need to add check to see if metric on both side of route are same
-
-Need to perform validity checks on incoming packets
-
+To Do:
+    Task set 1
+    Perform validity checks on incoming packets
+    Add check to see if metric on both side of route are same
+    
+    Task set 2
+    Converge when router removed
+    
+    Task set 3
+    Timers
 """
 
 
@@ -166,7 +167,6 @@ class RipDaemon:
         # An entry is 20 bytes
         packet_size = 4 + len(self.routing_table) * 20
         packet = bytearray(packet_size)
-        # packet[0:4] = bytearray([self.router_id])
         packet[0:4] = self.router_id.to_bytes(4, byteorder='little')
 
         peer_ids = [(key, self.routing_table[key][1]) for key in self.routing_table]
@@ -179,10 +179,8 @@ class RipDaemon:
             packet[i + 2: i + 4] = bytearray(2)
             # Router Id(4)
             packet[i + 4: i + 8] = entry[0].to_bytes(4, byteorder='little')
-            # Zero(4)
-            packet[i + 8: i + 12] = bytearray(4)
-            # Zero(4)
-            packet[i + 12: i + 16] = bytearray(4)
+            # Zero(8)
+            packet[i + 8: i + 16] = bytearray(8)
             # Metric(4)
             packet[i + 16: i + 20] = entry[1].to_bytes(4, byteorder='little')
             count += 1
@@ -198,7 +196,7 @@ class RipDaemon:
         peer_id = int.from_bytes(data[0:4], "little")
 
         for i in range(4, len(data), 20):
-            id  = int.from_bytes(data[i+4: i+8], "little")
+            id = int.from_bytes(data[i+4: i+8], "little")
             metric = int.from_bytes(data[i+16:i+20], "little")
             received_table.update({id : metric})
 
@@ -236,11 +234,10 @@ class RipDaemon:
         self.routing_table[peer_id] = [peer_id, metric, 0]
 
     def end_daemon(self):
-        """ Destory router daemon"""
+        """ Destroy router daemon"""
         print("Destroying daemon")
         self.display_details()
         sys.exit()
-
 
     @staticmethod
     def socket_setup(input_ports):
@@ -302,8 +299,7 @@ class RipDaemon:
             output = output_string.split("-")
 
             if len(output) == len(output_string):
-                # cant be bothered figuring what this meant to be ask will
-                return -1, "No idea what this is"
+                return -1, "Incorrect"
 
             if output[0].isdigit() and output[1].isdigit() and output[2].isdigit():
                 output_port = int(output[0])
