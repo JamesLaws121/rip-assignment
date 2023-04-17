@@ -192,20 +192,12 @@ class RipDaemon:
     @staticmethod
     def decode_table(data):
         """ Converts data received to usable format"""
-        # decoded_data = data.decode('utf-8')
-        # received_table, next_hop = json.loads(decoded_data)["data"]
-        # Converts the dictionary keys to integers
-        # received_table = {int(id): received_table[id] for id in received_table}
-        # return received_table, next_hop
 
         # Table of received data format : {id : metric}
         received_table = {}
         peer_id = int.from_bytes(data[0:4], "little")
 
         for i in range(4, len(data), 20):
-            # entry = data[i: i + 20].decode('utf-8').split('\0')[0]
-            # router_table.update(json.loads(entry))
-            entry = data[i: i + 20]
             id  = int.from_bytes(data[i+4: i+8], "little")
             metric = int.from_bytes(data[i+16:i+20], "little")
             received_table.update({id : metric})
@@ -218,8 +210,6 @@ class RipDaemon:
         if peer_id not in self.routing_table:
             self.add_peer(peer_id)
 
-        print(peer_id)
-        print(new_data)
         for id in new_data:
             if id == self.router_id:
                 continue
@@ -312,7 +302,8 @@ class RipDaemon:
             output = output_string.split("-")
 
             if len(output) == len(output_string):
-                return 3
+                # cant be bothered figuring what this meant to be ask will
+                return -1, "No idea what this is"
 
             if output[0].isdigit() and output[1].isdigit() and output[2].isdigit():
                 output_port = int(output[0])
