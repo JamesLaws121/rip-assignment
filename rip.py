@@ -168,13 +168,14 @@ class RipDaemon:
         packet_size = 4 + len(self.routing_table) * 20
         packet = bytearray(packet_size)
         packet[0:4] = self.router_id.to_bytes(4, byteorder='little')
+        family_id = 1
 
         peer_ids = [(key, self.routing_table[key][1]) for key in self.routing_table]
         count = 0
         for i in range(4, packet_size, 20):
             entry = peer_ids[count]
             # Address family identifier(2)
-            packet[i: i + 2] = bytearray(2)
+            packet[i: i + 2] = family_id.to_bytes(2, byteorder='little')
             # Zero(2)
             packet[i + 2: i + 4] = bytearray(2)
             # Router Id(4)
