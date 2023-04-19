@@ -244,13 +244,15 @@ class RipDaemon:
             if id not in self.routing_table:
                 # Add new entry to table
                 print(f"Adding entry: {id} to the table")
-                self.routing_table[id] = [peer_id, metric, 0, 0]
+                self.routing_table[id] = [peer_id, metric, time.time(), 0]
             else:
                 # Update existing entry in table
-                print(f"Updating entry: {id} in the table")
                 new_metric = new_data[id] + self.routing_table[peer_id][1]
                 if new_metric < self.routing_table[id][1]:
-                    self.routing_table[id] = [peer_id, new_metric, 0, 0]
+                    print(f"Updating entry: {id} in the table")
+                    self.routing_table[id] = [peer_id, new_metric, time.time(), 0]
+
+                self.routing_table[id][2] = time.time()
 
     def add_peer(self, peer_id):
         """ Adds a peer router to the routing table """
