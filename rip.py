@@ -160,7 +160,34 @@ class RipDaemon:
             self.update_table(data, next_hop)
 
         return data
+    @staticmethod
+    def validate_packet(data):
+        """ Validates the packet thats been sent """
+        if len(data) < 24:
+            return -1, "Incorrect packet size"
+        
+        elif int.from_bytes(data[0: 4], byteorder = "little") < 0:
+            return -1, "Incorrect header"
+        
+        for i in range(4, len(data), 20):
+            '''commented out because messy and not sure if needed'''
+            #if int.from_bytes(data[i: i + 2], byteorder = "little") != bytearray(2):
+            #    return -1, "Address family ID must be [0,0]" #see what james wants to rename this to
 
+            #if int.from_bytes(data[i + 2: i + 4], byteorder = "little") != bytearray(2):
+            #    return -1, "Bytes 2-4 must be 0's"
+
+            if int.from_bytes(data[i + 4: i + 8], byteorder = "little") < 0:
+                return -1, "Incorrect router Id"
+            
+            #if int.from_bytes(data[i + 8: i + 16], byteorder = "little") != bytearray(8):
+            #    return -1, "Bytes 8-16 must be 0's"
+
+            if int.from_bytes(data[i + 16: i + 20], byteorder = "little") < 0:
+                return -1, "Incorrect Metric"
+            
+        return 1, "Packet valid"
+            
     def encode_table(self):
         """ Creates the packet to be sent """
         # Header is 4 bytes
@@ -168,14 +195,13 @@ class RipDaemon:
         packet_size = 4 + len(self.routing_table) * 20
         packet = bytearray(packet_size)
         packet[0:4] = self.router_id.to_bytes(4, byteorder='little')
-        family_id = 1
 
         peer_ids = [(key, self.routing_table[key][1]) for key in self.routing_table]
         count = 0
         for i in range(4, packet_size, 20):
             entry = peer_ids[count]
             # Address family identifier(2)
-            packet[i: i + 2] = family_id.to_bytes(2, byteorder='little')
+            packet[i: i + 2] = bytearray(2)
             # Zero(2)
             packet[i + 2: i + 4] = bytearray(2)
             # Router Id(4)
