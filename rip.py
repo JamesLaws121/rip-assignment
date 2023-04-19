@@ -31,11 +31,9 @@ To Do:
     Add check to see if metric on both side of route are same
     
     Task set 2
-    Converge when router removed
-    metric 16 = deletion
+    Implement split horizon
     
-    Task set 3
-    Timers
+
 """
 
 
@@ -134,7 +132,7 @@ class RipDaemon:
             print(f"Metric: {value[1]}")
             print(f"Timer: {time.time() - value[2]:.2f}")
             if value[3] != 0:
-                print(f"Deleting in: {self.garbage_time - (time.time() - value[3])}")
+                print(f"Deleting in: {self.garbage_time - (time.time() - value[3]):.2f}")
             print("")
 
         print("***********************\n")
@@ -179,40 +177,46 @@ class RipDaemon:
     def read_input(self, readable):
         """ Reads updates from routers """
         for sock in readable:
-            data, addr = sock.recvfrom(1024)
-            data, next_hop = RipDaemon.decode_table(data)
-            self.update_table(data, next_hop)
+            packet_data, addr = sock.recvfrom(1024)
+            error, result = RipDaemon.validate_packet(packet_data)
+            if error == -1:
+                print("***********")
+                print("** Error **")
+                print(result)
+                print("Dropping packet")
+                print("***********")
+                continue
 
-        return data
+            table_data, next_hop = RipDaemon.decode_table(packet_data)
+            self.update_table(table_data, next_hop)
+
     @staticmethod
     def validate_packet(data):
         """ Validates the packet thats been sent """
-        if len(data) < 24:
+        if len(data) < 4:
             return -1, "Incorrect packet size"
         
-        elif int.from_bytes(data[0: 4], byteorder = "little") < 0:
+        elif int.from_bytes(data[0: 4], byteorder="little") < 0:
             return -1, "Incorrect header"
         
         for i in range(4, len(data), 20):
             '''commented out because messy and not sure if needed'''
-            if int.from_bytes(data[i: i + 2], byteorder = "little") != 0:
+            if int.from_bytes(data[i: i + 2], byteorder="little") != 0:
                 return -1, "Address family ID must be 0" 
 
-            if int.from_bytes(data[i + 2: i + 4], byteorder = "little") != 0:
+            if int.from_bytes(data[i + 2: i + 4], byteorder="little") != 0:
                 return -1, "Bytes 2-4 must be 0's"
 
-            if int.from_bytes(data[i + 4: i + 8], byteorder = "little") < 0:
+            if int.from_bytes(data[i + 4: i + 8], byteorder="little") < 0:
                 return -1, "Incorrect router Id"
             
-            if int.from_bytes(data[i + 8: i + 16], byteorder = "little") != 0:
+            if int.from_bytes(data[i + 8: i + 16], byteorder="little") != 0:
                 return -1, "Bytes 8-16 must be 0's"
 
-            if int.from_bytes(data[i + 16: i + 20], byteorder = "little") < 0:
+            if int.from_bytes(data[i + 16: i + 20], byteorder="little") < 0:
                 return -1, "Incorrect Metric"
             
         return 1, "Packet valid"
-
-    
 
     def encode_table(self):
         """ Creates the packet to be sent """
@@ -251,7 +255,7 @@ class RipDaemon:
         for i in range(4, len(data), 20):
             router_id = int.from_bytes(data[i+4: i+8], "little")
             metric = int.from_bytes(data[i+16:i+20], "little")
-            received_table.update({router_id : metric})
+            received_table.update({router_id: metric})
 
         return received_table, peer_id
 
@@ -266,6 +270,10 @@ class RipDaemon:
 
         for id in new_data:
             if id == self.router_id:
+                if new_data[id][1] != self.routing_table[peer_id][1]:
+                    print("Received unexpected route metric")
+                    print("Config is incorrectly set up")
+                    self.end_daemon()
                 continue
             metric = new_data[id] + self.routing_table[peer_id][1]
 
