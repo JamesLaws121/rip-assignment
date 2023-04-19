@@ -14,6 +14,8 @@ Notes on potential issues
 Current timer might have flaw where reading will muck up how often it is polled
 this probably doesn't matter
 can probably be fixed with some threading and better scheduling
+when you receive a 16 do you panic?
+Or just ignore it
 """
 
 
@@ -27,15 +29,7 @@ I made it add the .txt might change this later
 
 To Do:
     Task set 1
-    Perform validity checks on incoming packets
-    Add check to see if metric on both side of route are same
-    
-    Task set 2
-    Converge when router removed
-    metric 16 = deletion
-    
-    Task set 3
-    Timers
+
 """
 
 
@@ -108,7 +102,7 @@ class RipDaemon:
 
             self.update_table_timers()
 
-            self.display_details()
+            RipDaemon.display_details(self.routing_table)
             print("")
 
     def display_config_details(self):
@@ -125,18 +119,28 @@ class RipDaemon:
 
         print("\n***********************\n")
 
-    def display_details(self):
+    @staticmethod
+    def display_details(data):
         print("***********************\n")
         print("**** Routing table ****")
-        for router_id, value in self.routing_table.items():
+        for router_id, value in data.items():
             print(f"Router Id: {router_id}")
             print(f"Next hop: {value[0]}")
             print(f"Metric: {value[1]}")
             print(f"Timer: {time.time() - value[2]:.2f}")
             if value[3] != 0:
-                print(f"Deleting in: {self.garbage_time - (time.time() - value[3])}")
+                print(f"Deleting in: {self.garbage_time - (time.time() - value[3]):.2f}")
             print("")
 
+        print("***********************\n")
+
+    @staticmethod
+    def display_received_data(data):
+        print("***********************\n")
+        print("**** Received table ****")
+        for router_id, metric in data.items():
+            print(f"Router Id: {router_id}")
+            print(f"Metric: {metric}")
         print("***********************\n")
 
     def check_timer(self):
@@ -165,6 +169,7 @@ class RipDaemon:
             if time.time() - entry[2] > self.timeout * 6:
                 entry[1] = 16
                 entry[3] = time.time()
+                self.send_updates()
 
         for router_id in to_delete:
             del self.routing_table[router_id]
@@ -172,42 +177,88 @@ class RipDaemon:
     def send_updates(self):
         """ Sends the routers table to its neighbour routers """
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        encoded_table = self.encode_table()
+
         for id, port in self.output_routes.items():
+            encoded_table = self.encode_table(id)
             sock.sendto(encoded_table, ("127.0.0.1", port))
 
     def read_input(self, readable):
         """ Reads updates from routers """
         for sock in readable:
-            data, addr = sock.recvfrom(1024)
-            data, next_hop = RipDaemon.decode_table(data)
-            self.update_table(data, next_hop)
+            packet_data, addr = sock.recvfrom(1024)
+            error, result = RipDaemon.validate_packet(packet_data)
+            if error == -1:
+                print("***********")
+                print("** Error **")
+                print(result)
+                print("Dropping packet")
+                print("***********")
+                continue
 
-        return data
+            table_data, next_hop = RipDaemon.decode_table(packet_data)
+            self.update_table(table_data, next_hop)
 
-    def encode_table(self):
+            print(f"Receiving packet from peer router {next_hop}")
+            RipDaemon.display_received_data(table_data)
+
+    @staticmethod
+    def validate_packet(data):
+        """ Validates the packet that's been sent """
+        if len(data) < 4:
+            return -1, "Incorrect packet size"
+        
+        elif int.from_bytes(data[0: 4], byteorder="little") < 0:
+            return -1, "Incorrect header"
+        
+        for i in range(4, len(data), 20):
+            '''commented out because messy and not sure if needed'''
+            if int.from_bytes(data[i: i + 2], byteorder="little") != 0:
+                return -1, "Address family ID must be 0" 
+
+            if int.from_bytes(data[i + 2: i + 4], byteorder="little") != 0:
+                return -1, "Bytes 2-4 must be 0's"
+
+            if int.from_bytes(data[i + 4: i + 8], byteorder="little") < 0:
+                return -1, "Incorrect router Id"
+            
+            if int.from_bytes(data[i + 8: i + 16], byteorder="little") != 0:
+                return -1, "Bytes 8-16 must be 0's"
+
+            if int.from_bytes(data[i + 16: i + 20], byteorder="little") < 0 or int.from_bytes(data[i + 16: i + 20],
+                                                                                              byteorder="little") > 16:
+                return -1, "Incorrect Metric"
+            
+        return 1, "Packet valid"
+
+    def encode_table(self, destination_id):
         """ Creates the packet to be sent """
         # Header is 4 bytes
         # An entry is 20 bytes
         packet_size = 4 + len(self.routing_table) * 20
         packet = bytearray(packet_size)
         packet[0:4] = self.router_id.to_bytes(4, byteorder='little')
-        family_id = 2
 
         peer_ids = [(key, self.routing_table[key][1]) for key in self.routing_table]
+
         count = 0
         for i in range(4, packet_size, 20):
             entry = peer_ids[count]
+            router_id = entry[0]
+            metric = entry[1]
+
+            if self.routing_table[router_id][0] == destination_id and destination_id != router_id:
+                metric = 16
+
             # Address family identifier(2)
-            packet[i: i + 2] = family_id.to_bytes(2, byteorder='little')
+            packet[i: i + 2] = bytearray(2)
             # Zero(2)
             packet[i + 2: i + 4] = bytearray(2)
             # Router Id(4)
-            packet[i + 4: i + 8] = entry[0].to_bytes(4, byteorder='little')
+            packet[i + 4: i + 8] = router_id.to_bytes(4, byteorder='little')
             # Zero(8)
             packet[i + 8: i + 16] = bytearray(8)
             # Metric(4)
-            packet[i + 16: i + 20] = entry[1].to_bytes(4, byteorder='little')
+            packet[i + 16: i + 20] = metric.to_bytes(4, byteorder='little')
             count += 1
 
         return packet
@@ -223,13 +274,12 @@ class RipDaemon:
         for i in range(4, len(data), 20):
             router_id = int.from_bytes(data[i+4: i+8], "little")
             metric = int.from_bytes(data[i+16:i+20], "little")
-            received_table.update({router_id : metric})
+            received_table.update({router_id: metric})
 
         return received_table, peer_id
 
     def update_table(self, new_data, peer_id):
         """ Updates the routers table with the table received from a peer"""
-        print(f"receiving packet from peer router {peer_id}")
 
         if peer_id not in self.routing_table:
             self.add_peer(peer_id)
@@ -238,19 +288,34 @@ class RipDaemon:
 
         for id in new_data:
             if id == self.router_id:
+                if new_data[id] != self.routing_table[peer_id][1]:
+                    print("Received unexpected route metric")
+                    print("Config is incorrectly set up")
+                    self.end_daemon()
                 continue
             metric = new_data[id] + self.routing_table[peer_id][1]
 
-            if id not in self.routing_table:
+            if id not in self.routing_table and metric != 16:
                 # Add new entry to table
                 print(f"Adding entry: {id} to the table")
-                self.routing_table[id] = [peer_id, metric, 0, 0]
+                self.routing_table[id] = [peer_id, metric, time.time(), 0]
             else:
                 # Update existing entry in table
-                print(f"Updating entry: {id} in the table")
                 new_metric = new_data[id] + self.routing_table[peer_id][1]
-                if new_metric < self.routing_table[id][1]:
-                    self.routing_table[id] = [peer_id, new_metric, 0, 0]
+
+                if self.routing_table[id][0] == peer_id:
+                    if new_data[id] == 16:
+                        self.routing_table[id][1] = 16
+                        self.routing_table[id][3] = time.time()
+                        self.send_updates()
+                    else:
+                        self.routing_table[id] = [peer_id, new_metric, time.time(), 0]
+
+                elif new_metric < self.routing_table[id][1]:
+                    print(f"Updating entry: {id} in the table")
+                    self.routing_table[id] = [peer_id, new_metric, time.time(), 0]
+
+                self.routing_table[id][2] = time.time()
 
     def add_peer(self, peer_id):
         """ Adds a peer router to the routing table """
@@ -264,7 +329,7 @@ class RipDaemon:
     def end_daemon(self):
         """ Destroy router daemon"""
         print("Destroying daemon")
-        self.display_details()
+        RipDaemon.display_details(self.routing_table)
         sys.exit()
 
     @staticmethod
