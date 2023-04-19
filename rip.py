@@ -1,5 +1,5 @@
 import argparse
-import json
+import random
 import select
 import socket
 import sys
@@ -32,6 +32,7 @@ To Do:
     
     Task set 2
     Converge when router removed
+    metric 16 = deletion
     
     Task set 3
     Timers
@@ -62,7 +63,7 @@ class RipDaemon:
         # Generic socket used to send updates
         self.output_socket = self.input_sockets[0]
 
-        # router_id : [next_hop, metric, timer]
+        # router_id : [next_hop, metric, timeout, garbage_collection]
         self.routing_table = {}
 
         # Ports ready to read from
@@ -74,8 +75,12 @@ class RipDaemon:
 
         # Used to tell when to send advts
         self.advt_counter = 0
-        # Interval to check output status
+        # Interval to send output table
         self.timeout = 10
+        # time left to wait until updates
+        self.countdown = self.timeout
+        # Interval to keep dead router entry's
+        self.garbage_time = 5
         # Time timer started
         self.start = 0
 
@@ -83,9 +88,7 @@ class RipDaemon:
 
         while daemon_alive is True:
             # Main loop
-            readable, writeable, exceptional = select.select(self.input_sockets, [], [], self.timeout)
-
-            # Might need to make this use multithreading
+            readable, writeable, exceptional = select.select(self.input_sockets, [], [], self.countdown)
 
             if len(readable) != 0:
                 # Read from sockets
@@ -100,9 +103,11 @@ class RipDaemon:
                 print("check exceptional")
 
             if self.check_timer():
+                print("Sending updates")
                 self.send_updates()
 
-            print("")
+            self.update_table_timers()
+
             self.display_details()
             print("")
 
@@ -127,6 +132,9 @@ class RipDaemon:
             print(f"Router Id: {router_id}")
             print(f"Next hop: {value[0]}")
             print(f"Metric: {value[1]}")
+            print(f"Timer: {time.time() - value[2]:.2f}")
+            if value[3] != 0:
+                print(f"Deleting in: {self.garbage_time - (time.time() - value[3])}")
             print("")
 
         print("***********************\n")
@@ -134,16 +142,32 @@ class RipDaemon:
     def check_timer(self):
         """ Checks if it's time to send router adverts"""
 
-        if self.start < time.time():
-            self.start = time.time() + self.timeout
+        if self.start <= time.time():
+            self.countdown = self.timeout * (random.randint(8, 12) / 10)
+            self.start = time.time() + self.countdown
             return True
+        else:
+            self.countdown -= (self.start - time.time()-self.countdown)
         return False
 
     def update_table_timers(self):
-        """ Update the time since an entry was last updated"""
-        print("do this later")
-        print("not important")
-        self.display_details()
+        """ Update the time since an entry was last updated """
+
+        # List of entry's to remove from the table
+        to_delete = []
+
+        for router_id, entry in self.routing_table.items():
+            if entry[3] != 0:
+                if (time.time() - entry[3]) > self.garbage_time:
+                    to_delete.append(router_id)
+                continue
+
+            if time.time() - entry[2] > self.timeout * 6:
+                entry[1] = 16
+                entry[3] = time.time()
+
+        for router_id in to_delete:
+            del self.routing_table[router_id]
 
     def send_updates(self):
         """ Sends the routers table to its neighbour routers """
@@ -195,6 +219,7 @@ class RipDaemon:
         packet_size = 4 + len(self.routing_table) * 20
         packet = bytearray(packet_size)
         packet[0:4] = self.router_id.to_bytes(4, byteorder='little')
+        family_id = 2
 
         peer_ids = [(key, self.routing_table[key][1]) for key in self.routing_table]
         count = 0
@@ -223,17 +248,20 @@ class RipDaemon:
         peer_id = int.from_bytes(data[0:4], "little")
 
         for i in range(4, len(data), 20):
-            id = int.from_bytes(data[i+4: i+8], "little")
+            router_id = int.from_bytes(data[i+4: i+8], "little")
             metric = int.from_bytes(data[i+16:i+20], "little")
-            received_table.update({id : metric})
+            received_table.update({router_id : metric})
 
         return received_table, peer_id
 
     def update_table(self, new_data, peer_id):
         """ Updates the routers table with the table received from a peer"""
+        print(f"receiving packet from peer router {peer_id}")
 
         if peer_id not in self.routing_table:
             self.add_peer(peer_id)
+        else:
+            self.routing_table[peer_id][2] = time.time()
 
         for id in new_data:
             if id == self.router_id:
@@ -243,13 +271,13 @@ class RipDaemon:
             if id not in self.routing_table:
                 # Add new entry to table
                 print(f"Adding entry: {id} to the table")
-                self.routing_table[id] = [peer_id, metric, 0]
+                self.routing_table[id] = [peer_id, metric, 0, 0]
             else:
                 # Update existing entry in table
                 print(f"Updating entry: {id} in the table")
                 new_metric = new_data[id] + self.routing_table[peer_id][1]
                 if new_metric < self.routing_table[id][1]:
-                    self.routing_table[id] = [peer_id, new_metric, 0]
+                    self.routing_table[id] = [peer_id, new_metric, 0, 0]
 
     def add_peer(self, peer_id):
         """ Adds a peer router to the routing table """
@@ -258,7 +286,7 @@ class RipDaemon:
             if output[2] == peer_id:
                 metric = output[1]
 
-        self.routing_table[peer_id] = [peer_id, metric, 0]
+        self.routing_table[peer_id] = [peer_id, metric, time.time(), 0]
 
     def end_daemon(self):
         """ Destroy router daemon"""
