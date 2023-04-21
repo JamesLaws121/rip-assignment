@@ -283,7 +283,6 @@ class RipDaemon:
 
     def add_peer(self, peer_id):
         """ Adds a peer router to the routing table """
-
         for output in self.outputs:
             if output[2] == peer_id:
                 metric = output[1]
@@ -323,6 +322,7 @@ class RipDaemon:
         config = config_file.readlines()
         config_dict = {}
         for line in config:
+            line = line.strip()
             # Allows for comments
             if line[0] == '#':
                 continue
