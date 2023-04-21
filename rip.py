@@ -5,17 +5,6 @@ import socket
 import sys
 import time
 
-"""
-To run code use:
-
-python rip.py config_name
-
-
-To Do:
-    Task set 1
-    Read timers from config
-"""
-
 
 class RipDaemon:
     def __init__(self, config_name):
@@ -26,7 +15,7 @@ class RipDaemon:
         # Parse config file for valid id, ports and outputs
         daemon_input = RipDaemon.read_config(config_name)
         if daemon_input == -1:
-            self.end_daemon()
+            self.end_daemon(True)
 
         # The id of the router
         self.router_id = daemon_input[0]
@@ -90,7 +79,7 @@ class RipDaemon:
         print(f"Router ID: {self.router_id}")
         print(f"Input ports: {[port for port in self.input_ports]} \n")
         print(f"Periodic update timer: {self.timeout}")
-        print(f"Garbage-collection timer: {self.garbage_time}")
+        print(f"Garbage-collection timer: {self.garbage_time}\n")
         print("Outputs: ")
         for output in self.outputs:
             print(f"Port: {output[0]} Id: {output[1]} Metric {output[2]}")
@@ -301,10 +290,11 @@ class RipDaemon:
 
         self.routing_table[peer_id] = [peer_id, metric, time.time(), 0]
 
-    def end_daemon(self):
+    def end_daemon(self, config_error=False):
         """ Destroy router daemon"""
         print("Destroying daemon")
-        self.display_details()
+        if not config_error:
+            self.display_details()
         sys.exit()
 
     @staticmethod
@@ -432,14 +422,17 @@ class RipDaemon:
 if __name__ == "__main__":
     argParser = argparse.ArgumentParser()
     argParser.add_argument('filename', help="The name of the config file to use.")
-    argParser.add_argument('-e', '--extension', help="Set different extension for config file default txt")
+    argParser.add_argument('-e', '--extension', help="Set different extension for config file default txt \n"
+                                                     "Set to 'false' if extension provided in file input")
 
     args = argParser.parse_args()
 
-    extension = "txt"
-    if args.extension is not None:
-        extension = args.extension
-    config_input = args.filename + "." + extension
+    config_input = args.filename
+    if args.extension != 'false':
+        if args.extension is not None:
+            config_input += "." + args.extension
+        else:
+            config_input += ".txt"
 
     if config_input is None:
         print("No config file name was given")
