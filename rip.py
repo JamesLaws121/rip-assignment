@@ -23,13 +23,19 @@ class RipDaemon:
         print("Daemon created")
         daemon_alive = True
 
-        """ Parse config file for valid id, ports and outputs"""
+        # Parse config file for valid id, ports and outputs
         daemon_input = RipDaemon.read_config(config_name)
         if daemon_input == -1:
             self.end_daemon()
 
+        # The id of the router
+        self.router_id = daemon_input[0]
+
+        # Ports To receive input from
+        self.input_ports = daemon_input[1]
+
         # outputs: format: [[port, metric, id], ...]
-        self.router_id, self.input_ports, self.outputs = daemon_input
+        self.outputs = daemon_input[2]
 
         # output_routes: Used to match router id to physical port
         # format: {router_id: port}
@@ -52,13 +58,15 @@ class RipDaemon:
         self.exceptional = []
 
         # Interval to send output table
-        self.timeout = 10
+        self.timeout = daemon_input[3]
         # time left to wait until updates
         self.countdown = self.timeout
-        # Interval to keep dead router entry's
-        self.garbage_time = 5
+        # Interval to keep inactive router entry's
+        self.garbage_time = daemon_input[4]
         # Timestamp for when to next send updates
         self.start = 0
+        # Start the timer
+        self.check_timer()
 
         self.display_config_details()
 
@@ -76,23 +84,27 @@ class RipDaemon:
             self.display_details()
 
     def display_config_details(self):
+        """ Displays the config file details """
         print("***********************\n")
         print("***** Config file *****")
         print(f"Router ID: {self.router_id}")
         print(f"Input ports: {[port for port in self.input_ports]} \n")
+        print(f"Periodic update timer: {self.timeout}")
+        print(f"Garbage-collection timer: {self.garbage_time}")
         print("Outputs: ")
         for output in self.outputs:
             print(f"Port: {output[0]} Id: {output[1]} Metric {output[2]}")
         print("\n***********************\n")
 
     def display_details(self):
+        """ Displays the routing table """
         print("***********************\n")
         print("**** Routing table ****")
         for router_id, value in self.routing_table.items():
             print(f"Router Id: {router_id}")
             print(f"Next hop: {value[0]}")
             print(f"Metric: {value[1]}")
-            print(f"Timer: {time.time() - value[2]:.2f}")
+            print(f"Timer: {time.time() - value[2]:.2f}\n")
             if value[3] != 0:
                 print(f"Deleting in: {self.garbage_time - (time.time() - value[3]):.2f}")
         print("***********************\n\n")
@@ -108,8 +120,7 @@ class RipDaemon:
         print("***********************\n")
 
     def check_timer(self):
-        """ Checks if it's time to send router adverts"""
-
+        """ Checks if it's time to send router adverts """
         if self.start <= time.time():
             self.countdown = self.timeout * (random.randint(8, 12) / 10)
             self.start = time.time() + self.countdown
@@ -120,7 +131,6 @@ class RipDaemon:
 
     def update_table_timers(self):
         """ Update the time since an entry was last updated """
-
         # List of entry's to remove from the table
         to_delete = []
 
@@ -161,19 +171,20 @@ class RipDaemon:
                 continue
 
             table_data, next_hop = RipDaemon.decode_table(packet_data)
+            print(f"Reading data from {next_hop}")
             self.update_table(table_data, next_hop)
 
     @staticmethod
     def validate_packet(data):
         """ Validates the packet that's been sent """
         if len(data) < 4:
-            return -1, "Incorrect packet size"
+            return -1, "Invalid packet size"
         
         elif int.from_bytes(data[0: 4], byteorder="little") < 0:
-            return -1, "Incorrect header"
+            return -1, "Invalid header"
         
         for i in range(4, len(data), 20):
-            '''commented out because messy and not sure if needed'''
+            metric = int.from_bytes(data[i + 16: i + 20], byteorder="little")
             if int.from_bytes(data[i: i + 2], byteorder="little") != 0:
                 return -1, "Address family ID must be 0" 
 
@@ -186,9 +197,8 @@ class RipDaemon:
             if int.from_bytes(data[i + 8: i + 16], byteorder="little") != 0:
                 return -1, "Bytes 8-16 must be 0's"
 
-            if int.from_bytes(data[i + 16: i + 20], byteorder="little") < 0 or int.from_bytes(data[i + 16: i + 20],
-                                                                                              byteorder="little") > 16:
-                return -1, "Incorrect Metric"
+            if metric < 0 or metric > 16:
+                return -1, "Invalid Metric"
             
         return 1, "Packet valid"
 
@@ -202,9 +212,9 @@ class RipDaemon:
 
         peer_ids = [(key, self.routing_table[key][1]) for key in self.routing_table]
 
-        count = 0
-        for i in range(4, packet_size, 20):
-            entry = peer_ids[count]
+        # Loops through all entries in the received table
+        for index, i in enumerate(range(4, packet_size, 20)):
+            entry = peer_ids[index]
             router_id = entry[0]
             metric = entry[1]
 
@@ -221,13 +231,12 @@ class RipDaemon:
             packet[i + 8: i + 16] = bytearray(8)
             # Metric(4)
             packet[i + 16: i + 20] = metric.to_bytes(4, byteorder='little')
-            count += 1
 
         return packet
 
     @staticmethod
     def decode_table(data):
-        """ Converts data received to usable format"""
+        """ Converts data received to usable format """
 
         # Table of received data format : {id : metric}
         received_table = {}
@@ -241,9 +250,10 @@ class RipDaemon:
         return received_table, peer_id
 
     def update_table(self, new_data, peer_id):
-        """ Updates the routers table with the table received from a peer"""
+        """ Updates the routers table with the table received from a peer """
 
         if peer_id not in self.routing_table:
+            print(f"Adding entry: {peer_id} to the table")
             self.add_peer(peer_id)
         else:
             self.routing_table[peer_id][2] = time.time()
@@ -251,14 +261,15 @@ class RipDaemon:
         for router_id in new_data:
             if router_id == self.router_id:
                 if new_data[router_id] != self.routing_table[peer_id][1]:
-                    # If two  directly connected routers have
+                    # If two directly connected routers have different metrics
                     print("Received unexpected route metric")
                     print("Config is incorrectly set up")
                     self.end_daemon()
+                continue
 
             metric = new_data[router_id] + self.routing_table[peer_id][1]
 
-            if router_id not in self.routing_table and metric != 16:
+            if router_id not in self.routing_table and metric < 16:
                 # Add new entry to table
                 print(f"Adding entry: {router_id} to the table")
                 self.routing_table[router_id] = [peer_id, metric, time.time(), 0]
@@ -268,7 +279,7 @@ class RipDaemon:
 
                 if self.routing_table[router_id][0] == peer_id:
                     # Metric of currently used route has changed
-                    if new_data[router_id] == 16:
+                    if new_data[router_id] >= 16:
                         self.routing_table[router_id][1] = 16
                         self.routing_table[router_id][3] = time.time()
                         self.send_updates()
@@ -293,7 +304,7 @@ class RipDaemon:
     def end_daemon(self):
         """ Destroy router daemon"""
         print("Destroying daemon")
-        RipDaemon.display_details(self.routing_table)
+        self.display_details()
         sys.exit()
 
     @staticmethod
@@ -311,42 +322,67 @@ class RipDaemon:
     @staticmethod
     def read_config(config_name):
         """ Reads the configuration file """
-
-        config_file = open(config_name)
+        try:
+            config_file = open(config_name)
+        except FileNotFoundError:
+            print("***********")
+            print("** Error **")
+            print("Config file not found")
+            return -1
 
         config = config_file.readlines()
         config_dict = {}
         for line in config:
-            variable, value = line.split(":")
+            # Allows for comments
+            if line[0] == '#':
+                continue
 
-            # Cleans up any newlines and whitespace
-            config_dict[variable] = [value.strip() for value in value.split(",")]
+            variable, value = line.split(":")
+            config_dict[variable.strip()] = [value.strip() for value in value.split(",")]
 
         router_id = config_dict["router_id"][0]
         input_ports = config_dict["input_ports"]
         outputs = config_dict["outputs"]
+        timer = config_dict.get("timer", ['0'])[0]
+        garbage_timer = config_dict.get("garbage_timer", ['0'])[0]
 
-        formatted_config = RipDaemon.convert_config(router_id, input_ports, outputs)
+        formatted_config = RipDaemon.convert_config(router_id, input_ports, outputs, timer, garbage_timer)
 
         if formatted_config[0] != 1:
+            print("***********")
             print("** Error **")
             print(formatted_config[1])
             return -1
 
-        router_id, input_ports, outputs = formatted_config[1]
+        router_id, input_ports, outputs, timer, garbage_timer = formatted_config[1]
+
+        if timer <= 0:
+            timer = 10
+        if garbage_timer <= 0:
+            garbage_timer = 5
 
         RipDaemon.validate_config(router_id, input_ports, outputs)
 
-        return router_id, input_ports, outputs
+        return router_id, input_ports, outputs, timer, garbage_timer
 
     @staticmethod
-    def convert_config(router_id, input_ports, outputs):
-        """Transforms the raw data from the configuration file into usable data"""
+    def convert_config(router_id, input_ports, outputs, timer, garbage_timer):
+        """ Transforms the raw data from the configuration file into usable data """
 
         if router_id.isdigit():
             router_id = int(router_id)
         else:
             return -1, "Router id is an invalid value"
+
+        if timer.isdigit():
+            timer = int(timer)
+        else:
+            return -1, "timer is an invalid value"
+
+        if garbage_timer.isdigit():
+            garbage_timer = int(garbage_timer)
+        else:
+            return -1, "Garbage collection timer is an invalid value"
 
         input_ports = [int(port) if port.isdigit() else None for port in input_ports]
         if None in input_ports:
@@ -368,7 +404,7 @@ class RipDaemon:
 
             correct_output.append((output_port, output_metric, output_id))
 
-        return 1, (router_id, input_ports, correct_output)
+        return 1, (router_id, input_ports, correct_output, timer, garbage_timer)
 
     @staticmethod
     def validate_config(router_id, input_ports, outputs):

@@ -1,3 +1,6 @@
 router_id:1
+# This is a comment
 input_ports:5000
 outputs:6000-4-2
+timer:10
+garbage_timer: 5
