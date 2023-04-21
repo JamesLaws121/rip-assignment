@@ -5,31 +5,15 @@ import socket
 import sys
 import time
 
-import threading
-
-
-
-"""
-Notes on potential issues
-Current timer might have flaw where reading will muck up how often it is polled
-this probably doesn't matter
-can probably be fixed with some threading and better scheduling
-when you receive a 16 do you panic?
-Or just ignore it
-"""
-
-
 """
 To run code use:
 
-python rip.py config
-            ^^filename^^
+python rip.py config_name
 
-I made it add the .txt might change this later
 
 To Do:
     Task set 1
-
+    Read timers from config
 """
 
 
@@ -67,75 +51,55 @@ class RipDaemon:
         # Need to look into this
         self.exceptional = []
 
-        # Used to tell when to send advts
-        self.advt_counter = 0
         # Interval to send output table
         self.timeout = 10
         # time left to wait until updates
         self.countdown = self.timeout
         # Interval to keep dead router entry's
         self.garbage_time = 5
-        # Time timer started
+        # Timestamp for when to next send updates
         self.start = 0
 
         self.display_config_details()
 
         while daemon_alive is True:
             # Main loop
-            readable, writeable, exceptional = select.select(self.input_sockets, [], [], self.countdown)
+            readable, _, _ = select.select(self.input_sockets, [], [], self.countdown)
 
             if len(readable) != 0:
-                # Read from sockets
-                # threading.Thread(target=self.read_input, args=readable)
                 self.read_input(readable)
 
-            if len(writeable) != 0:
-                # Probably won't want this one
-                print("Write to sockets")
-
-            if len(exceptional) != 0:
-                print("check exceptional")
-
             if self.check_timer():
-                print("Sending updates")
                 self.send_updates()
 
             self.update_table_timers()
-
-            RipDaemon.display_details(self.routing_table)
-            print("")
+            self.display_details()
 
     def display_config_details(self):
         print("***********************\n")
         print("***** Config file *****")
-
         print(f"Router ID: {self.router_id}")
-
         print(f"Input ports: {[port for port in self.input_ports]} \n")
-
         print("Outputs: ")
         for output in self.outputs:
             print(f"Port: {output[0]} Id: {output[1]} Metric {output[2]}")
-
         print("\n***********************\n")
 
-    @staticmethod
-    def display_details(data):
+    def display_details(self):
         print("***********************\n")
         print("**** Routing table ****")
-        for router_id, value in data.items():
+        for router_id, value in self.routing_table.items():
             print(f"Router Id: {router_id}")
             print(f"Next hop: {value[0]}")
             print(f"Metric: {value[1]}")
             print(f"Timer: {time.time() - value[2]:.2f}")
             if value[3] != 0:
                 print(f"Deleting in: {self.garbage_time - (time.time() - value[3]):.2f}")
-            print("")
-
-        print("***********************\n")
+        print("***********************\n\n")
 
     @staticmethod
     def display_received_data(data):
+        """ This function is used to look at received data"""
         print("***********************\n")
         print("**** Received table ****")
         for router_id, metric in data.items():
@@ -176,10 +140,11 @@ class RipDaemon:
 
     def send_updates(self):
         """ Sends the routers table to its neighbour routers """
+        print("Sending updates")
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-        for id, port in self.output_routes.items():
-            encoded_table = self.encode_table(id)
+        for router_id, port in self.output_routes.items():
+            encoded_table = self.encode_table(router_id)
             sock.sendto(encoded_table, ("127.0.0.1", port))
 
     def read_input(self, readable):
@@ -197,9 +162,6 @@ class RipDaemon:
 
             table_data, next_hop = RipDaemon.decode_table(packet_data)
             self.update_table(table_data, next_hop)
-
-            print(f"Receiving packet from peer router {next_hop}")
-            RipDaemon.display_received_data(table_data)
 
     @staticmethod
     def validate_packet(data):
@@ -286,36 +248,38 @@ class RipDaemon:
         else:
             self.routing_table[peer_id][2] = time.time()
 
-        for id in new_data:
-            if id == self.router_id:
-                if new_data[id] != self.routing_table[peer_id][1]:
+        for router_id in new_data:
+            if router_id == self.router_id:
+                if new_data[router_id] != self.routing_table[peer_id][1]:
+                    # If two  directly connected routers have
                     print("Received unexpected route metric")
                     print("Config is incorrectly set up")
                     self.end_daemon()
-                continue
-            metric = new_data[id] + self.routing_table[peer_id][1]
 
-            if id not in self.routing_table and metric != 16:
+            metric = new_data[router_id] + self.routing_table[peer_id][1]
+
+            if router_id not in self.routing_table and metric != 16:
                 # Add new entry to table
-                print(f"Adding entry: {id} to the table")
-                self.routing_table[id] = [peer_id, metric, time.time(), 0]
+                print(f"Adding entry: {router_id} to the table")
+                self.routing_table[router_id] = [peer_id, metric, time.time(), 0]
             else:
                 # Update existing entry in table
-                new_metric = new_data[id] + self.routing_table[peer_id][1]
+                new_metric = new_data[router_id] + self.routing_table[peer_id][1]
 
-                if self.routing_table[id][0] == peer_id:
-                    if new_data[id] == 16:
-                        self.routing_table[id][1] = 16
-                        self.routing_table[id][3] = time.time()
+                if self.routing_table[router_id][0] == peer_id:
+                    # Metric of currently used route has changed
+                    if new_data[router_id] == 16:
+                        self.routing_table[router_id][1] = 16
+                        self.routing_table[router_id][3] = time.time()
                         self.send_updates()
                     else:
-                        self.routing_table[id] = [peer_id, new_metric, time.time(), 0]
+                        self.routing_table[router_id] = [peer_id, new_metric, time.time(), 0]
 
-                elif new_metric < self.routing_table[id][1]:
-                    print(f"Updating entry: {id} in the table")
-                    self.routing_table[id] = [peer_id, new_metric, time.time(), 0]
+                elif new_metric < self.routing_table[router_id][1]:
+                    print(f"Updating entry: {router_id} in the table")
+                    self.routing_table[router_id] = [peer_id, new_metric, time.time(), 0]
 
-                self.routing_table[id][2] = time.time()
+                self.routing_table[router_id][2] = time.time()
 
     def add_peer(self, peer_id):
         """ Adds a peer router to the routing table """
@@ -365,6 +329,7 @@ class RipDaemon:
         formatted_config = RipDaemon.convert_config(router_id, input_ports, outputs)
 
         if formatted_config[0] != 1:
+            print("** Error **")
             print(formatted_config[1])
             return -1
 
@@ -424,16 +389,21 @@ class RipDaemon:
                 return -1, "Output port number is the same as Input port number"
             if output[0] < 1024 or i_port > max_port:
                 return -1, "An output port number has not in range"
-            # check if output[1,2] are ints
+
         return 1, "All good"
 
 
 if __name__ == "__main__":
     argParser = argparse.ArgumentParser()
     argParser.add_argument('filename', help="The name of the config file to use.")
+    argParser.add_argument('-e', '--extension', help="Set different extension for config file default txt")
 
     args = argParser.parse_args()
-    config_input = args.filename + ".txt"
+
+    extension = "txt"
+    if args.extension is not None:
+        extension = args.extension
+    config_input = args.filename + "." + extension
 
     if config_input is None:
         print("No config file name was given")
