@@ -201,7 +201,7 @@ class RipDaemon:
 
         peer_ids = [(key, self.routing_table[key][1]) for key in self.routing_table]
 
-        # Loops through all entries in the received table
+        # Loops through all entries in the table
         for index, i in enumerate(range(4, packet_size, 20)):
             entry = peer_ids[index]
             router_id = entry[0]
@@ -258,7 +258,9 @@ class RipDaemon:
 
             metric = new_data[router_id] + self.routing_table[peer_id][1]
 
-            if router_id not in self.routing_table and metric < 16:
+            if router_id not in self.routing_table:
+                if metric >= 16:
+                    continue
                 # Add new entry to table
                 print(f"Adding entry: {router_id} to the table")
                 self.routing_table[router_id] = [peer_id, metric, time.time(), 0]
@@ -268,7 +270,7 @@ class RipDaemon:
 
                 if self.routing_table[router_id][0] == peer_id:
                     # Metric of currently used route has changed
-                    if new_data[router_id] >= 16:
+                    if new_metric >= 16:
                         self.routing_table[router_id][1] = 16
                         self.routing_table[router_id][3] = time.time()
                         self.send_updates()
