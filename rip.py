@@ -249,11 +249,6 @@ class RipDaemon:
 
         for router_id in new_data:
             if router_id == self.router_id:
-                if new_data[router_id] != self.routing_table[peer_id][1]:
-                    # If two directly connected routers have different metrics
-                    print("Received unexpected route metric")
-                    print("Config is incorrectly set up")
-                    self.end_daemon()
                 continue
 
             metric = new_data[router_id] + self.routing_table[peer_id][1]
@@ -266,20 +261,16 @@ class RipDaemon:
                 self.routing_table[router_id] = [peer_id, metric, time.time(), 0]
             else:
                 # Update existing entry in table
-                new_metric = new_data[router_id] + self.routing_table[peer_id][1]
-
                 if self.routing_table[router_id][0] == peer_id:
                     # Metric of currently used route has changed
-                    if new_metric >= 16:
-                        self.routing_table[router_id][1] = 16
+                    self.routing_table[router_id] = [peer_id, metric, time.time(), 0]
+                    if metric >= 16:
                         self.routing_table[router_id][3] = time.time()
                         self.send_updates()
-                    else:
-                        self.routing_table[router_id] = [peer_id, new_metric, time.time(), 0]
 
-                elif new_metric < self.routing_table[router_id][1]:
+                if metric < self.routing_table[router_id][1]:
                     print(f"Updating entry: {router_id} in the table")
-                    self.routing_table[router_id] = [peer_id, new_metric, time.time(), 0]
+                    self.routing_table[router_id] = [peer_id, metric, time.time(), 0]
 
                 self.routing_table[router_id][2] = time.time()
 
