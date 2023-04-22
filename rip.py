@@ -93,10 +93,11 @@ class RipDaemon:
             print(f"Router Id: {router_id}")
             print(f"Next hop: {value[0]}")
             print(f"Metric: {value[1]}")
-            print(f"Timer: {time.time() - value[2]:.2f}\n")
+            print(f"Timer: {time.time() - value[2]:.2f}")
             if value[3] != 0:
                 print(f"Deleting in: {self.garbage_time - (time.time() - value[3]):.2f}")
-        print("***********************\n\n")
+            print("")
+        print("\n***********************\n\n")
 
     @staticmethod
     def display_received_data(data):
@@ -263,14 +264,16 @@ class RipDaemon:
             else:
                 # Update existing entry in table
                 if self.routing_table[router_id][0] == peer_id:
-                    # Metric of currently used route has changed
-                    self.routing_table[router_id] = [peer_id, metric, time.time(), 0]
+                    # Checking currently used metric
                     if metric >= 16:
-                        self.routing_table[router_id][3] = time.time()
-                        self.send_updates()
-                    self.routing_table[router_id][2] = time.time()
+                        if self.routing_table[router_id][1] < 16:
+                            self.routing_table[router_id] = [peer_id, metric, time.time(), time.time()]
+                            self.send_updates()
+                        continue
+                    else:
+                        self.routing_table[router_id] = [peer_id, metric, time.time(), 0]
 
-                if metric < self.routing_table[router_id][1]:
+                if metric < self.routing_table[router_id][1] and metric < 16:
                     print(f"Updating entry: {router_id} in the table")
                     self.routing_table[router_id] = [peer_id, metric, time.time(), 0]
 
