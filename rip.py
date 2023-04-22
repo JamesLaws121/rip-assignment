@@ -116,6 +116,7 @@ class RipDaemon:
             return True
         else:
             self.countdown -= (self.start - time.time()-self.countdown)
+
         return False
 
     def update_table_timers(self):
@@ -186,7 +187,7 @@ class RipDaemon:
             if int.from_bytes(data[i + 8: i + 16], byteorder="little") != 0:
                 return -1, "Bytes 8-16 must be 0's"
 
-            if metric < 0 or metric > 16:
+            if metric < 0:
                 return -1, "Invalid Metric"
             
         return 1, "Packet valid"
@@ -267,12 +268,11 @@ class RipDaemon:
                     if metric >= 16:
                         self.routing_table[router_id][3] = time.time()
                         self.send_updates()
+                    self.routing_table[router_id][2] = time.time()
 
                 if metric < self.routing_table[router_id][1]:
                     print(f"Updating entry: {router_id} in the table")
                     self.routing_table[router_id] = [peer_id, metric, time.time(), 0]
-
-                self.routing_table[router_id][2] = time.time()
 
     def add_peer(self, peer_id):
         """ Adds a peer router to the routing table """
